@@ -1,0 +1,13 @@
+headers = llama.h
+headerFilter = llama.h
+package = com.privateai.vault.llamacpp
+
+# When building, you'll need to specify the path to llama.cpp
+# via -libraryPath and -includeDirs flags
+compilerOpts = -I/path/to/llama.cpp
+linkerOpts = -L/path/to/llama.cpp/build -lllama -lstdc++
+
+---
+
+// Forward declarations for key llama.cpp types
+// These will be populated when you build against actual llama.cpp headers

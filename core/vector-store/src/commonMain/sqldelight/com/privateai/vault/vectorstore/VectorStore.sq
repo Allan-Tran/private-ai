@@ -1,0 +1,99 @@
+-- Schema for sovereign vector storage with sqlite-vec extension
+-- This enables RAG (Retrieval Augmented Generation) capabilities
+
+-- Documents table stores raw content and metadata
+CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY NOT NULL,
+    content TEXT NOT NULL,
+    source_path TEXT NOT NULL,
+    metadata TEXT, -- JSON encoded metadata
+    chunk_count INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+-- Chunks table stores document fragments with their embeddings
+CREATE TABLE IF NOT EXISTS chunks (
+    id TEXT PRIMARY KEY NOT NULL,
+    document_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    token_count INTEGER NOT NULL,
+    embedding BLOB, -- Float array stored as BLOB for sqlite-vec
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+);
+
+-- Virtual table for vector similarity search using sqlite-vec
+-- This will be created via raw SQL in code since SQLDelight doesn't support
+-- virtual table syntax well
+
+-- Sessions table tracks Active Desk workspace sessions
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    created_at INTEGER NOT NULL,
+    last_accessed INTEGER NOT NULL
+);
+
+-- Session documents links documents to sessions
+CREATE TABLE IF NOT EXISTS session_documents (
+    session_id TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    added_at INTEGER NOT NULL,
+    PRIMARY KEY (session_id, document_id),
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+);
+
+-- Queries
+
+insertDocument:
+INSERT INTO documents (id, content, source_path, metadata, chunk_count, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+getDocumentById:
+SELECT * FROM documents WHERE id = ?;
+
+getDocumentsBySession:
+SELECT d.* FROM documents d
+JOIN session_documents sd ON d.id = sd.document_id
+WHERE sd.session_id = ?
+ORDER BY sd.added_at DESC;
+
+deleteDocument:
+DELETE FROM documents WHERE id = ?;
+
+insertChunk:
+INSERT INTO chunks (id, document_id, content, chunk_index, token_count, embedding, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+getChunksByDocument:
+SELECT * FROM chunks WHERE document_id = ? ORDER BY chunk_index;
+
+deleteChunksByDocument:
+DELETE FROM chunks WHERE document_id = ?;
+
+insertSession:
+INSERT INTO sessions (id, name, description, created_at, last_accessed)
+VALUES (?, ?, ?, ?, ?);
+
+getSessionById:
+SELECT * FROM sessions WHERE id = ?;
+
+getAllSessions:
+SELECT * FROM sessions ORDER BY last_accessed DESC;
+
+updateSessionAccess:
+UPDATE sessions SET last_accessed = ? WHERE id = ?;
+
+deleteSession:
+DELETE FROM sessions WHERE id = ?;
+
+addDocumentToSession:
+INSERT INTO session_documents (session_id, document_id, added_at)
+VALUES (?, ?, ?);
+
+removeDocumentFromSession:
+DELETE FROM session_documents WHERE session_id = ? AND document_id = ?;

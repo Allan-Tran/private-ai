@@ -1,0 +1,75 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Android Studio
+.android/
+captures/
+.externalNativeBuild
+.cxx
+local.properties
+
+# VS Code
+.vscode/
+.vs/
+
+# macOS
+.DS_Store
+*.swp
+*.swo
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Kotlin
+*.kotlin_module
+*.kotlin_builtins
+
+# Native binaries (will be built locally)
+native-libs/
+!native-libs/.gitkeep
+
+# llama.cpp (cloned separately)
+llama.cpp/
+
+# sqlite-vec (cloned separately)
+sqlite-vec/
+
+# Downloaded AI models (too large for git)
+models/
+!models/.gitkeep
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+
+# OS generated files
+.Trashes
+.Spotlight-V100
+.TemporaryItems
+.fseventsd
+.DocumentRevisions-V100
+.VolumeIcon.icns
+
+# Build outputs
+*.apk
+*.aab
+*.app
+*.msi
+*.dmg
+*.deb
+*.exe
