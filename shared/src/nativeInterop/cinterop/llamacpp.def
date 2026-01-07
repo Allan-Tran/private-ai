@@ -2,12 +2,28 @@ headers = llama.h
 headerFilter = llama.h
 package = com.privateai.vault.llamacpp
 
-# When building, you'll need to specify the path to llama.cpp
-# via -libraryPath and -includeDirs flags
-compilerOpts = -I/path/to/llama.cpp
-linkerOpts = -L/path/to/llama.cpp/build -lllama -lstdc++
+# iOS ARM64 (iPhone/iPad)
+compilerOpts.ios_arm64 = -Isrc/nativeInterop/cinterop/headers
+linkerOpts.ios_arm64 = -Lsrc/nativeInterop/cinterop/libs/ios-arm64 -lllama -lc++ -framework Accelerate -framework Metal
 
----
+# macOS ARM64 (Apple Silicon)
+compilerOpts.macos_arm64 = -Isrc/nativeInterop/cinterop/headers
+linkerOpts.macos_arm64 = -Lsrc/nativeInterop/cinterop/libs/macos-arm64 -lllama -lc++ -framework Accelerate -framework Metal
 
-// Forward declarations for key llama.cpp types
-// These will be populated when you build against actual llama.cpp headers
+# macOS x64 (Intel Mac)
+compilerOpts.macos_x64 = -Isrc/nativeInterop/cinterop/headers
+linkerOpts.macos_x64 = -Lsrc/nativeInterop/cinterop/libs/macos-x64 -lllama -lc++ -framework Accelerate
+
+# Windows x64 (MinGW)
+compilerOpts.mingw_x64 = -Isrc/nativeInterop/cinterop/headers
+linkerOpts.mingw_x64 = -Lsrc/nativeInterop/cinterop/libs/windows-x64 -lllama -lstdc++
+
+# Static libraries to link
+staticLibraries = libllama.a
+libraryPaths.ios_arm64 = src/nativeInterop/cinterop/libs/ios-arm64
+libraryPaths.macos_arm64 = src/nativeInterop/cinterop/libs/macos-arm64
+libraryPaths.macos_x64 = src/nativeInterop/cinterop/libs/macos-x64
+
+# Note: Copy your compiled llama.cpp artifacts to:
+# - shared/src/nativeInterop/cinterop/headers/llama.h
+# - shared/src/nativeInterop/cinterop/libs/<platform>/libllama.a

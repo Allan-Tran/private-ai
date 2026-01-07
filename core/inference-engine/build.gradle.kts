@@ -29,6 +29,15 @@ kotlin {
             }
         }
 
+        val desktopMain by getting {
+            dependsOn(commonMain)
+            dependencies {
+                // Use java-llama.cpp for JVM - pre-built JNI bindings
+                // This avoids having to write JNI bridge manually
+                implementation("de.kherud:llama:3.0.0")
+            }
+        }
+
         val nativeMain by creating {
             dependsOn(commonMain)
         }

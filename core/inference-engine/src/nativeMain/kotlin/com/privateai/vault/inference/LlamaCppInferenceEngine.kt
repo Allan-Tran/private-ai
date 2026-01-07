@@ -7,62 +7,57 @@ import kotlinx.coroutines.flow.flow
 
 /**
  * Native implementation of InferenceEngine using llama.cpp via C interop.
- * This implementation provides true local inference without network calls.
+ * Updated to use modern llama_batch/llama_decode API (post-2023).
+ *
+ * CRITICAL: This uses the NEW API - llama_eval was removed in late 2023.
  */
 @OptIn(ExperimentalForeignApi::class)
 class LlamaCppInferenceEngine : InferenceEngine {
     private var context: CPointer<llama_context>? = null
     private var model: CPointer<llama_model>? = null
     private var currentModelInfo: ModelInfo? = null
+    private var isBackendInitialized = false
 
     override suspend fun loadModel(modelPath: String, params: ModelParams): Boolean {
-        return memScoped {
-            try {
-                // Initialize llama backend
-                llama_backend_init()
-
-                // Set up model parameters
-                val modelParams = llama_model_default_params()
-                modelParams.n_gpu_layers = params.gpuLayers
-                modelParams.use_mmap = params.useMmap
-                modelParams.use_mlock = params.useMlock
-
-                // Load the model
-                val loadedModel = llama_load_model_from_file(modelPath, modelParams)
-                    ?: return@memScoped false
-
-                model = loadedModel
-
-                // Set up context parameters
-                val ctxParams = llama_context_default_params()
-                ctxParams.n_ctx = params.contextSize.toUInt()
-                ctxParams.n_batch = params.batchSize.toUInt()
-                ctxParams.n_threads = params.threads
-
-                // Create context
-                val loadedContext = llama_new_context_with_model(loadedModel, ctxParams)
-                    ?: return@memScoped false
-
-                context = loadedContext
-
-                // Extract model info
-                currentModelInfo = extractModelInfo(loadedModel)
-
-                true
-            } catch (e: Exception) {
+        return try {
+            // Cleanup any existing model
+            if (isModelLoaded()) {
                 unloadModel()
-                false
             }
+
+            // Initialize llama backend (once per process)
+            if (!isBackendInitialized) {
+                llama_backend_init()
+                isBackendInitialized = true
+            }
+
+            // Load model
+            val loadedModel = loadModelInternal(modelPath, params) ?: return false
+            model = loadedModel
+
+            // Create context
+            val loadedContext = createContextInternal(loadedModel, params) ?: return false
+            context = loadedContext
+
+            // Extract model info
+            currentModelInfo = extractModelInfo(loadedModel)
+
+            true
+        } catch (e: Exception) {
+            unloadModel()
+            false
         }
     }
 
     override suspend fun unloadModel() {
-        context?.let { llama_free(it) }
-        model?.let { llama_free_model(it) }
-        context = null
-        model = null
-        currentModelInfo = null
-        llama_backend_free()
+        try {
+            context?.let { llama_free(it) }
+            model?.let { llama_free_model(it) }
+        } finally {
+            context = null
+            model = null
+            currentModelInfo = null
+        }
     }
 
     override fun isModelLoaded(): Boolean {
@@ -73,33 +68,35 @@ class LlamaCppInferenceEngine : InferenceEngine {
         val ctx = context ?: throw IllegalStateException("No model loaded")
         val mdl = model ?: throw IllegalStateException("No model loaded")
 
-        memScoped {
+        try {
             // Tokenize the prompt
-            val tokens = tokenize(prompt, mdl)
+            val tokens = tokenizePrompt(mdl, prompt)
 
-            // Evaluate the prompt
-            llama_eval(ctx, tokens.toCValues(), tokens.size, 0, params.threads)
+            // Evaluate prompt using modern batch API
+            evaluateTokensBatch(ctx, tokens, 0)
 
             // Generate tokens
             var generatedCount = 0
             while (generatedCount < params.maxTokens) {
                 // Sample next token
-                val nextToken = sampleToken(ctx, params)
+                val nextToken = sampleNextToken(ctx, mdl, params)
 
                 // Check for EOS
-                if (nextToken == llama_token_eos(mdl)) break
+                if (isEndOfSequence(mdl, nextToken)) break
 
                 // Decode token to text
-                val tokenText = decodeToken(nextToken, mdl)
+                val tokenText = decodeToken(mdl, nextToken)
                 emit(tokenText)
 
                 // Check stop sequences
-                if (params.stopSequences.any { tokenText.contains(it) }) break
+                if (shouldStop(tokenText, params.stopSequences)) break
 
-                // Evaluate the new token
-                llama_eval(ctx, cValuesOf(nextToken), 1, tokens.size + generatedCount, params.threads)
+                // Evaluate the new token using batch API
+                evaluateTokensBatch(ctx, listOf(nextToken), tokens.size + generatedCount)
                 generatedCount++
             }
+        } catch (e: Exception) {
+            emit("\n[Generation Error: ${e.message}]")
         }
     }
 
@@ -107,65 +104,207 @@ class LlamaCppInferenceEngine : InferenceEngine {
         val mdl = model ?: throw IllegalStateException("No model loaded")
         val ctx = context ?: throw IllegalStateException("No model loaded")
 
-        return memScoped {
-            val tokens = tokenize(text, mdl)
-            llama_eval(ctx, tokens.toCValues(), tokens.size, 0, 1)
+        return try {
+            val tokens = tokenizePrompt(mdl, text)
+            evaluateTokensBatch(ctx, tokens, 0)
 
             val embeddingSize = llama_n_embd(mdl)
             val embeddings = llama_get_embeddings(ctx)
                 ?: throw IllegalStateException("Failed to get embeddings")
 
-            FloatArray(embeddingSize) { i ->
-                embeddings[i]
-            }
+            FloatArray(embeddingSize) { i -> embeddings[i] }
+        } catch (e: Exception) {
+            throw IllegalStateException("Embedding generation failed: ${e.message}")
         }
     }
 
     override fun getModelInfo(): ModelInfo? = currentModelInfo
 
-    // Helper functions
+    // ==================== PRIVATE HELPER METHODS ====================
 
-    private fun MemScope.tokenize(text: String, model: CPointer<llama_model>): List<llama_token> {
-        val maxTokens = text.length + 1
-        val tokensBuffer = allocArray<llama_token>(maxTokens)
-        val tokenCount = llama_tokenize(
-            model,
-            text.cstr.ptr,
-            text.length,
-            tokensBuffer,
-            maxTokens,
-            false,
-            false
-        )
-        return List(tokenCount) { tokensBuffer[it] }
+    private fun loadModelInternal(
+        modelPath: String,
+        params: ModelParams
+    ): CPointer<llama_model>? = memScoped {
+        val modelParams = alloc<llama_model_params>()
+        llama_model_default_params(modelParams.ptr)
+
+        // Configure model parameters
+        modelParams.n_gpu_layers = params.gpuLayers
+        modelParams.use_mmap = params.useMmap
+        modelParams.use_mlock = params.useMlock
+
+        // Load model from file - pin string memory
+        modelPath.usePinned { pinnedPath ->
+            llama_load_model_from_file(
+                pinnedPath.addressOf(0).reinterpret(),
+                modelParams
+            )
+        }
     }
 
-    private fun MemScope.sampleToken(
+    private fun createContextInternal(
+        model: CPointer<llama_model>,
+        params: ModelParams
+    ): CPointer<llama_context>? = memScoped {
+        val ctxParams = alloc<llama_context_params>()
+        llama_context_default_params(ctxParams.ptr)
+
+        // Configure context parameters
+        ctxParams.n_ctx = params.contextSize.toUInt()
+        ctxParams.n_batch = params.batchSize.toUInt()
+        ctxParams.n_threads = params.threads
+        ctxParams.n_threads_batch = params.threads
+
+        // Enable FP16 for KV cache (better performance on Apple Silicon)
+        ctxParams.type_k = GGML_TYPE_F16
+        ctxParams.type_v = GGML_TYPE_F16
+
+        llama_new_context_with_model(model, ctxParams)
+    }
+
+    /**
+     * Modern API: Use llama_batch and llama_decode instead of deprecated llama_eval.
+     * This is the CRITICAL fix for the deprecated API issue.
+     */
+    private fun evaluateTokensBatch(
         context: CPointer<llama_context>,
-        params: GenerationParams
-    ): llama_token {
-        val samplingParams = llama_sampler_chain_default_params()
-        samplingParams.temperature = params.temperature
-        samplingParams.top_p = params.topP
-        samplingParams.top_k = params.topK
-        samplingParams.penalty_repeat = params.repeatPenalty
+        tokens: List<llama_token>,
+        position: Int
+    ) = memScoped {
+        // Create batch for tokens
+        val batch = llama_batch_init(tokens.size, 0, 1)
 
-        return llama_sample_token(context, samplingParams)
+        try {
+            // Add tokens to batch
+            tokens.forEachIndexed { idx, token ->
+                val seq_ids = allocArray<llama_seq_id>(1)
+                seq_ids[0] = 0
+
+                llama_batch_add(
+                    batch = batch,
+                    id = token,
+                    pos = position + idx,
+                    seq_ids = seq_ids,
+                    logits = (idx == tokens.size - 1) // Only compute logits for last token
+                )
+            }
+
+            // Decode batch (replaces llama_eval)
+            val result = llama_decode(context, batch)
+
+            if (result != 0) {
+                throw IllegalStateException("llama_decode failed with code: $result")
+            }
+        } finally {
+            llama_batch_free(batch)
+        }
     }
 
-    private fun MemScope.decodeToken(token: llama_token, model: CPointer<llama_model>): String {
-        val buffer = allocArray<ByteVar>(256)
-        llama_token_to_piece(model, token, buffer, 256, false)
-        return buffer.toKString()
+    private fun tokenizePrompt(
+        model: CPointer<llama_model>,
+        prompt: String
+    ): List<llama_token> = memScoped {
+        val maxTokens = prompt.length + 256
+        val tokensBuffer = allocArray<llama_token>(maxTokens)
+
+        val tokenCount = prompt.usePinned { pinnedPrompt ->
+            llama_tokenize(
+                model,
+                pinnedPrompt.addressOf(0).reinterpret(),
+                prompt.length,
+                tokensBuffer,
+                maxTokens,
+                true,   // add_special (add BOS token)
+                false   // parse_special
+            )
+        }
+
+        if (tokenCount < 0) {
+            throw IllegalStateException("Tokenization failed")
+        }
+
+        List(tokenCount) { i -> tokensBuffer[i] }
+    }
+
+    private fun sampleNextToken(
+        context: CPointer<llama_context>,
+        model: CPointer<llama_model>,
+        params: GenerationParams
+    ): llama_token = memScoped {
+        // Get logits for last token
+        val logits = llama_get_logits_ith(context, -1)
+            ?: throw IllegalStateException("Failed to get logits")
+
+        val vocabSize = llama_n_vocab(model)
+
+        // Create candidates array
+        val candidates = allocArray<llama_token_data>(vocabSize)
+
+        for (i in 0 until vocabSize) {
+            candidates[i].id = i
+            candidates[i].logit = logits[i]
+            candidates[i].p = 0.0f
+        }
+
+        // Create candidates_p struct
+        val candidatesP = alloc<llama_token_data_array>()
+        candidatesP.data = candidates
+        candidatesP.size = vocabSize.toULong()
+        candidatesP.sorted = false
+
+        // Apply sampling (top-k, top-p, temperature)
+        llama_sample_top_k(context, candidatesP.ptr, params.topK, 1)
+        llama_sample_top_p(context, candidatesP.ptr, params.topP, 1)
+        llama_sample_temp(context, candidatesP.ptr, params.temperature)
+
+        // Sample token
+        llama_sample_token(context, candidatesP.ptr)
+    }
+
+    private fun decodeToken(
+        model: CPointer<llama_model>,
+        token: llama_token
+    ): String = memScoped {
+        val bufferSize = 256
+        val buffer = allocArray<ByteVar>(bufferSize)
+
+        val length = llama_token_to_piece(
+            model,
+            token,
+            buffer,
+            bufferSize,
+            false  // special
+        )
+
+        if (length < 0) {
+            return "[DECODE_ERROR]"
+        }
+
+        buffer.toKString()
+    }
+
+    private fun isEndOfSequence(
+        model: CPointer<llama_model>,
+        token: llama_token
+    ): Boolean {
+        return token == llama_token_eos(model)
+    }
+
+    private fun shouldStop(
+        text: String,
+        stopSequences: List<String>
+    ): Boolean {
+        return stopSequences.any { text.contains(it) }
     }
 
     private fun extractModelInfo(model: CPointer<llama_model>): ModelInfo {
         return ModelInfo(
-            name = "Unknown", // Extract from metadata if available
+            name = "GGUF Model",
             architecture = llama_model_type(model).toString(),
             contextLength = llama_n_ctx_train(model),
             embeddingDimension = llama_n_embd(model),
-            parameters = llama_model_n_params(model),
+            parameters = llama_model_n_params(model).toLong(),
             quantization = "Unknown"
         )
     }
