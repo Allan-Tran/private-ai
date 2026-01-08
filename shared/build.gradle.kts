@@ -1,41 +1,24 @@
 plugins {
     kotlin("multiplatform")
     kotlin("plugin.serialization")
-    id("com.android.library")
+    // Temporarily disabled for desktop-only build
+    // id("com.android.library")
 }
 
 kotlin {
-    androidTarget {
-        compilations.all {
-            kotlinOptions {
-                jvmTarget = "17"
-            }
-        }
-    }
+    // Temporarily disabled for desktop-only build
+    // androidTarget {
+    //     compilations.all {
+    //         kotlinOptions {
+    //             jvmTarget = "17"
+    //         }
+    //     }
+    // }
 
     jvm("desktop") {
         compilations.all {
             kotlinOptions {
                 jvmTarget = "17"
-            }
-        }
-    }
-
-    // Native targets for llama.cpp integration
-    listOf(
-        mingwX64("windowsX64"),
-        macosX64(),
-        macosArm64()
-    ).forEach { nativeTarget ->
-        nativeTarget.apply {
-            compilations.getByName("main") {
-                cinterops {
-                    val llamacpp by creating {
-                        defFile(project.file("src/nativeInterop/cinterop/llamacpp.def"))
-                        packageName("com.privateai.vault.llamacpp")
-                        includeDirs.headerFilterOnly(project.file("src/nativeInterop/cinterop/headers"))
-                    }
-                }
             }
         }
     }
@@ -60,46 +43,32 @@ kotlin {
             }
         }
 
-        val androidMain by getting {
-            dependencies {
-                implementation("app.cash.sqldelight:android-driver:2.0.1")
-            }
-        }
+        // Temporarily disabled for desktop-only build
+        // val androidMain by getting {
+        //     dependencies {
+        //         implementation("app.cash.sqldelight:android-driver:2.0.1")
+        //     }
+        // }
 
         val desktopMain by getting {
             dependencies {
                 implementation("app.cash.sqldelight:sqlite-driver:2.0.1")
             }
         }
-
-        val nativeMain by creating {
-            dependsOn(commonMain)
-        }
-
-        val windowsX64Main by getting {
-            dependsOn(nativeMain)
-        }
-
-        val macosX64Main by getting {
-            dependsOn(nativeMain)
-        }
-
-        val macosArm64Main by getting {
-            dependsOn(nativeMain)
-        }
     }
 }
 
-android {
-    namespace = "com.privateai.vault.shared"
-    compileSdk = 34
-
-    defaultConfig {
-        minSdk = 26
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-}
+// Temporarily disabled for desktop-only build
+// android {
+//     namespace = "com.privateai.vault.shared"
+//     compileSdk = 34
+//
+//     defaultConfig {
+//         minSdk = 26
+//     }
+//
+//     compileOptions {
+//         sourceCompatibility = JavaVersion.VERSION_17
+//         targetCompatibility = JavaVersion.VERSION_17
+//     }
+// }

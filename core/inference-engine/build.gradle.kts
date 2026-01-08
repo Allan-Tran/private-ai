@@ -6,19 +6,31 @@ plugins {
 kotlin {
     jvm("desktop")
 
-    listOf(
-        mingwX64("windowsX64"),
-        macosX64(),
-        macosArm64()
-    ).forEach { nativeTarget ->
-        nativeTarget.apply {
-            binaries {
-                sharedLib {
-                    baseName = "inference-engine"
-                }
-            }
-        }
-    }
+    // Temporarily disabled for desktop-only build
+    // Native targets will be re-enabled once llama.cpp integration is ready
+    // // Native targets for llama.cpp integration
+    // listOf(
+    //     mingwX64("windowsX64"),
+    //     macosX64(),
+    //     macosArm64()
+    // ).forEach { nativeTarget ->
+    //     nativeTarget.apply {
+    //         binaries {
+    //             sharedLib {
+    //                 baseName = "inference-engine"
+    //             }
+    //         }
+    //         compilations.getByName("main") {
+    //             cinterops {
+    //                 val llamacpp by creating {
+    //                     defFile(project.file("src/nativeInterop/cinterop/llamacpp.def"))
+    //                     packageName("com.privateai.vault.llamacpp")
+    //                     includeDirs.headerFilterOnly(project.file("src/nativeInterop/cinterop/headers"))
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 
     sourceSets {
         val commonMain by getting {
@@ -38,20 +50,21 @@ kotlin {
             }
         }
 
-        val nativeMain by creating {
-            dependsOn(commonMain)
-        }
-
-        val windowsX64Main by getting {
-            dependsOn(nativeMain)
-        }
-
-        val macosX64Main by getting {
-            dependsOn(nativeMain)
-        }
-
-        val macosArm64Main by getting {
-            dependsOn(nativeMain)
-        }
+        // Temporarily disabled for desktop-only build
+        // val nativeMain by creating {
+        //     dependsOn(commonMain)
+        // }
+        //
+        // val windowsX64Main by getting {
+        //     dependsOn(nativeMain)
+        // }
+        //
+        // val macosX64Main by getting {
+        //     dependsOn(nativeMain)
+        // }
+        //
+        // val macosArm64Main by getting {
+        //     dependsOn(nativeMain)
+        // }
     }
 }

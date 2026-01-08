@@ -1,12 +1,15 @@
 plugins {
     kotlin("multiplatform")
     kotlin("plugin.serialization")
-    id("com.android.library")
+    kotlin("plugin.compose")
+    // Temporarily disabled for desktop-only build
+    // id("com.android.library")
     id("org.jetbrains.compose")
 }
 
 kotlin {
-    androidTarget()
+    // Temporarily disabled for desktop-only build
+    // androidTarget()
     jvm("desktop")
 
     sourceSets {
@@ -29,16 +32,17 @@ kotlin {
     }
 }
 
-android {
-    namespace = "com.privateai.vault.features.sessionanalyst"
-    compileSdk = 34
-
-    defaultConfig {
-        minSdk = 26
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-}
+// Temporarily disabled for desktop-only build
+// android {
+//     namespace = "com.privateai.vault.features.sessionanalyst"
+//     compileSdk = 34
+//
+//     defaultConfig {
+//         minSdk = 26
+//     }
+//
+//     compileOptions {
+//         sourceCompatibility = JavaVersion.VERSION_17
+//         targetCompatibility = JavaVersion.VERSION_17
+//     }
+// }

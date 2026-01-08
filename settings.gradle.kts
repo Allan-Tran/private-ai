@@ -22,16 +22,16 @@ dependencyResolutionManagement {
 include(":shared")
 
 // Platform-specific modules
-include(":androidApp")
-include(":desktopApp")
+//include(":androidApp")
+//include(":desktopApp")
 
 // Feature slices (Vertical Slice Architecture)
 include(":features:session-analyst")
-include(":features:document-vault")
-include(":features:model-manager")
-include(":features:active-desk")
+//include(":features:document-vault")
+//include(":features:model-manager")
+//include(":features:active-desk")
 
 // Core infrastructure
 include(":core:inference-engine")
 include(":core:vector-store")
-include(":core:platform-bridge")
+//include(":core:platform-bridge")

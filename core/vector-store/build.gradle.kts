@@ -1,11 +1,14 @@
 plugins {
     kotlin("multiplatform")
     kotlin("plugin.serialization")
+    // Temporarily disabled for desktop-only build
+    // id("com.android.library")
     id("app.cash.sqldelight") version "2.0.1"
 }
 
 kotlin {
-    androidTarget()
+    // Temporarily disabled for desktop-only build
+    // androidTarget()
     jvm("desktop")
 
     sourceSets {
@@ -19,11 +22,12 @@ kotlin {
             }
         }
 
-        val androidMain by getting {
-            dependencies {
-                implementation("app.cash.sqldelight:android-driver:2.0.1")
-            }
-        }
+        // Temporarily disabled for desktop-only build
+        // val androidMain by getting {
+        //     dependencies {
+        //         implementation("app.cash.sqldelight:android-driver:2.0.1")
+        //     }
+        // }
 
         val desktopMain by getting {
             dependencies {
@@ -32,6 +36,21 @@ kotlin {
         }
     }
 }
+
+// Temporarily disabled for desktop-only build
+// android {
+//     namespace = "com.privateai.vault.vectorstore"
+//     compileSdk = 34
+//
+//     defaultConfig {
+//         minSdk = 26
+//     }
+//
+//     compileOptions {
+//         sourceCompatibility = JavaVersion.VERSION_17
+//         targetCompatibility = JavaVersion.VERSION_17
+//     }
+// }
 
 sqldelight {
     databases {

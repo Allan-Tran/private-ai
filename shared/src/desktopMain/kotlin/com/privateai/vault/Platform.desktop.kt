@@ -39,11 +39,12 @@ actual class FileSystemAccess {
         File(path).readBytes()
     }
 
-    actual suspend fun writeBytes(path: String, data: ByteArray) = withContext(Dispatchers.IO) {
+    actual suspend fun writeBytes(path: String, data: ByteArray): Unit = withContext(Dispatchers.IO) {
         File(path).apply {
             parentFile?.mkdirs()
             writeBytes(data)
         }
+        Unit
     }
 
     actual suspend fun deleteFile(path: String): Boolean = withContext(Dispatchers.IO) {
