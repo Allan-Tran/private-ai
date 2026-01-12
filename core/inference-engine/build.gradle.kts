@@ -44,27 +44,19 @@ kotlin {
         val desktopMain by getting {
             dependsOn(commonMain)
             dependencies {
-                // Use java-llama.cpp for JVM - pre-built JNI bindings
-                // This avoids having to write JNI bridge manually
                 implementation("de.kherud:llama:3.0.0")
             }
         }
 
-        // Temporarily disabled for desktop-only build
-        // val nativeMain by creating {
-        //     dependsOn(commonMain)
-        // }
-        //
-        // val windowsX64Main by getting {
-        //     dependsOn(nativeMain)
-        // }
-        //
-        // val macosX64Main by getting {
-        //     dependsOn(nativeMain)
-        // }
-        //
-        // val macosArm64Main by getting {
-        //     dependsOn(nativeMain)
-        // }
+        val commonTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+            }
+        }
+
+        val desktopTest by getting {
+            dependsOn(commonTest)
+        }
     }
 }

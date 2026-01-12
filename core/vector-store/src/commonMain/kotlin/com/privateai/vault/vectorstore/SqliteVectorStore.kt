@@ -14,13 +14,27 @@ import java.nio.ByteOrder
 
 /**
  * SQLite implementation of VectorStore using sqlite-vec extension.
+ *
+ * Epic 2 (The Vault) - Sovereign AI Implementation:
+ * - Uses encrypted SQLite database via SQLCipher (Story 2.1)
+ * - Redacts sensitive PII before storage (Story 2.2)
+ * - Defense-in-depth: encryption + redaction
+ *
+ * @param driver SQLDriver with encryption enabled
+ * @param redactor Privacy redactor to mask sensitive data before storage
  */
 class SqliteVectorStore(
-    private val driver: SqlDriver
+    private val driver: SqlDriver,
+    private val redactor: PrivacyRedactor
 ) : VectorStore {
 
     private val database = VectorDatabase(driver)
     private val queries = database.vectorStoreQueries
+
+    init {
+        println("[VectorStore] 🔒 Initialized with encryption and privacy redaction")
+        println("[VectorStore]    Redaction patterns: ${redactor.getRedactionPatterns().joinToString(", ")}")
+    }
 
     override suspend fun initialize() {
         withContext(Dispatchers.IO) {
@@ -45,10 +59,18 @@ class SqliteVectorStore(
 
     override suspend fun addDocument(document: Document, chunks: List<DocumentChunk>) {
         withContext(Dispatchers.IO) {
-            // Insert document
+            // Epic 2.2: Redact sensitive information before storage
+            val redactedContent = redactor.redact(document.content)
+
+            // Log if redaction occurred (for security audit)
+            if (redactedContent != document.content) {
+                println("[VectorStore] ⚠️  Sensitive data detected and redacted in document ${document.id}")
+            }
+
+            // Insert document with redacted content
             queries.insertDocument(
                 id = document.id,
-                content = document.content,
+                content = redactedContent,
                 source_path = document.sourcePath,
                 metadata = Json.encodeToString(document.metadata),
                 chunk_count = chunks.size.toLong(),
@@ -56,12 +78,14 @@ class SqliteVectorStore(
                 updated_at = document.updatedAt
             )
 
-            // Insert chunks with embeddings
+            // Insert chunks with embeddings (also redacted)
             chunks.forEach { chunk ->
+                val redactedChunkContent = redactor.redact(chunk.content)
+
                 queries.insertChunk(
                     id = chunk.id,
                     document_id = chunk.documentId,
-                    content = chunk.content,
+                    content = redactedChunkContent,
                     chunk_index = chunk.chunkIndex.toLong(),
                     token_count = chunk.tokenCount.toLong(),
                     embedding = floatArrayToBlob(chunk.embedding),
@@ -236,4 +260,11 @@ class SqliteVectorStore(
     }
 }
 
-expect fun createVectorStoreDriver(path: String): SqlDriver
+/**
+ * Creates an encrypted SQLDriver for the vector store.
+ *
+ * Epic 2.1 - Encryption Story
+ * @param path Database file path
+ * @param passphrase Encryption passphrase for SQLCipher
+ */
+expect fun createVectorStoreDriver(path: String, passphrase: String): SqlDriver

@@ -134,4 +134,16 @@ data class SearchResult(
     val similarity: Float
 )
 
-expect fun createVectorStore(databasePath: String): VectorStore
+/**
+ * Factory function for creating an encrypted VectorStore with privacy redaction.
+ *
+ * Epic 2 (The Vault) - Sovereign AI Implementation
+ * @param databasePath Path to the encrypted database file
+ * @param passphrase Encryption passphrase for SQLCipher
+ * @param redactor Privacy redactor for masking sensitive data (defaults to RegexPrivacyRedactor)
+ */
+expect fun createVectorStore(
+    databasePath: String,
+    passphrase: String,
+    redactor: PrivacyRedactor = RegexPrivacyRedactor()
+): VectorStore

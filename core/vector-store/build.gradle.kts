@@ -32,6 +32,12 @@ kotlin {
         val desktopMain by getting {
             dependencies {
                 implementation("app.cash.sqldelight:sqlite-driver:2.0.1")
+                // SQLCipher for encrypted database storage (Sovereign AI requirement)
+                implementation("net.zetetic:sqlcipher-android:4.5.4@aar") {
+                    exclude(group = "androidx.sqlite")
+                }
+                // Xerial's SQLite JDBC with SQLCipher support for JVM
+                implementation("org.xerial:sqlite-jdbc:3.44.1.0")
             }
         }
     }
