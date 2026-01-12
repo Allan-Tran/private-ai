@@ -36,24 +36,25 @@ class SqliteVectorStore(
         println("[VectorStore]    Redaction patterns: ${redactor.getRedactionPatterns().joinToString(", ")}")
     }
 
-    override suspend fun initialize() {
+override suspend fun initialize() {
         withContext(Dispatchers.IO) {
-            // Enable sqlite-vec extension
-            // Note: You'll need to load the extension library
-            driver.execute(null, "SELECT load_extension('vec0')", 0)
-
-            // Create virtual table for vector search
-            // Using FAISS-like index for efficient similarity search
-            driver.execute(
-                null,
-                """
-                CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
-                    chunk_id TEXT PRIMARY KEY,
-                    embedding FLOAT[384]
+            try {
+                driver.execute(null, "SELECT load_extension('vec0')", 0)
+                
+                driver.execute(
+                    null,
+                    """
+                    CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
+                        chunk_id TEXT PRIMARY KEY,
+                        embedding FLOAT[384]
+                    )
+                    """.trimIndent(),
+                    0
                 )
-                """.trimIndent(),
-                0
-            )
+                println("[VectorStore] ✅ Vector extension loaded successfully")
+            } catch (e: Exception) {
+                println("[VectorStore] ⚠️  Warning: 'vec0' extension not found. Vector search will be disabled.")
+            }
         }
     }
 

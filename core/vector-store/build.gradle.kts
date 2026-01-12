@@ -15,6 +15,7 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 implementation(project(":shared"))
+                implementation(project(":core:inference-engine"))
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
                 implementation("app.cash.sqldelight:runtime:2.0.1")
@@ -22,24 +23,27 @@ kotlin {
             }
         }
 
-        // Temporarily disabled for desktop-only build
-        // val androidMain by getting {
-        //     dependencies {
-        //         implementation("app.cash.sqldelight:android-driver:2.0.1")
-        //     }
-        // }
-
         val desktopMain by getting {
             dependencies {
-                implementation("app.cash.sqldelight:sqlite-driver:2.0.1")
-                // SQLCipher for encrypted database storage (Sovereign AI requirement)
-                implementation("net.zetetic:sqlcipher-android:4.5.4@aar") {
-                    exclude(group = "androidx.sqlite")
+                implementation("app.cash.sqldelight:sqlite-driver:2.0.1") {
+                    exclude(group = "org.xerial", module = "sqlite-jdbc")
                 }
-                // Xerial's SQLite JDBC with SQLCipher support for JVM
-                implementation("org.xerial:sqlite-jdbc:3.44.1.0")
+
+                implementation("io.github.willena:sqlite-jdbc:3.50.1.0")
             }
         }
+
+        val commonTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+            }
+        }
+
+        val desktopTest by getting {
+            dependsOn(commonTest)
+        }
+        // -----------------------------------
     }
 }
 

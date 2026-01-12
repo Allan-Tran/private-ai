@@ -16,18 +16,15 @@ package com.privateai.vault.vectorstore
  */
 class RegexPrivacyRedactor : PrivacyRedactor {
 
-    companion object {
-        // Phone number patterns (US and international)
+companion object {
         private val PHONE_PATTERNS = listOf(
-            // US formats: (123) 456-7890, 123-456-7890, 1234567890
-            Regex("""\b(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})\b"""),
-            // International: +44 20 7123 4567, +33 1 23 45 67 89
-            Regex("""\+[0-9]{1,3}[\s.-]?(\()?[0-9]{1,4}(\))?[\s.-]?[0-9]{1,4}[\s.-]?[0-9]{1,9}""")
+            Regex("""(?:\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})"""),
+            
+            Regex("""\+[0-9]{1,3}[-.\s]?\(?[0-9]{1,4}\)?[-.\s]?[0-9]{1,4}[-.\s]?[0-9]{1,9}""")
         )
 
-        // Email pattern (comprehensive)
         private val EMAIL_PATTERN = Regex(
-            """[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"""
+            """[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+(\.[a-zA-Z]{2,})?"""
         )
 
         // Social Security Number patterns
@@ -40,10 +37,15 @@ class RegexPrivacyRedactor : PrivacyRedactor {
 
         // Credit card number patterns (Visa, MasterCard, Amex, Discover)
         private val CREDIT_CARD_PATTERNS = listOf(
-            // 16 digit cards with spaces/dashes
-            Regex("""\b[0-9]{4}[\s-]?[0-9]{4}[\s-]?[0-9]{4}[\s-]?[0-9]{4}\b"""),
+            // 16 digit cards (Visa/Mastercard) - matches 4 groups of 4
+            Regex("""\b(?:4[0-9]{3}|5[1-5][0-9]{2}|6011|35\d{3})[\s-]?[0-9]{4}[\s-]?[0-9]{4}[\s-]?[0-9]{4}\b"""),
+            
             // 15 digit Amex
-            Regex("""\b[0-9]{4}[\s-]?[0-9]{6}[\s-]?[0-9]{5}\b""")
+            Regex("""\b3[47][0-9]{13}\b"""),
+            
+            // Generic fallback for other formats
+            Regex("""\b[0-9]{4}[\s-][0-9]{4}[\s-][0-9]{4}[\s-][0-9]{4}\b"""),
+            Regex("""\b[0-9]{4}[\s-][0-9]{6}[\s-][0-9]{5}\b""")
         )
 
         // IP address patterns (IPv4 and IPv6)
