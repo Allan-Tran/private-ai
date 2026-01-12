@@ -114,59 +114,17 @@ class SqliteVectorStore(
         threshold: Float
     ): List<SearchResult> {
         return withContext(Dispatchers.IO) {
-            // Use sqlite-vec for cosine similarity search
-            val queryBlob = floatArrayToBlob(queryEmbedding)
+            // TODO: Implement actual vector similarity search with sqlite-vec extension
+            // For now, return empty list until extension is properly configured
+            // This requires:
+            // 1. Loading sqlite-vec extension (.dll/.so/.dylib)
+            // 2. Creating virtual table with vec0
+            // 3. Implementing proper vector search query
 
-            val sql = """
-                SELECT
-                    chunk_id,
-                    vec_distance_cosine(embedding, ?) as distance
-                FROM vec_chunks
-                WHERE distance < ?
-                ORDER BY distance
-                LIMIT ?
-            """.trimIndent()
+            println("[VectorStore] ⚠️  Vector search not yet implemented - requires sqlite-vec extension")
+            println("[VectorStore]    See: https://github.com/asg017/sqlite-vec")
 
-            val cursor = driver.executeQuery(
-                null,
-                sql,
-                {
-                    bindBytes(0, queryBlob)
-                    bindDouble(1, (1.0 - threshold).toDouble())
-                    bindLong(2, limit.toLong())
-                },
-                3
-            )
-
-            val results = mutableListOf<SearchResult>()
-
-            while (cursor.next().value) {
-                val chunkId = cursor.getString(0)!!
-                val distance = cursor.getDouble(1)!!
-                val similarity = (1.0 - distance).toFloat()
-
-                // Get chunk and document
-                val chunk = queries.getChunksByDocument(chunkId).executeAsOneOrNull()
-                    ?.let { dbChunk ->
-                        DocumentChunk(
-                            id = dbChunk.id,
-                            documentId = dbChunk.document_id,
-                            content = dbChunk.content,
-                            chunkIndex = dbChunk.chunk_index.toInt(),
-                            tokenCount = dbChunk.token_count.toInt(),
-                            embedding = blobToFloatArray(dbChunk.embedding ?: ByteArray(0)),
-                            createdAt = dbChunk.created_at
-                        )
-                    }
-
-                chunk?.let {
-                    getDocument(it.documentId)?.let { doc ->
-                        results.add(SearchResult(it, doc, similarity))
-                    }
-                }
-            }
-
-            results
+            emptyList()
         }
     }
 

@@ -29,14 +29,12 @@ class DesktopInferenceEngine : InferenceEngine {
             model?.close()
 
             // Configure model parameters
-            val modelParams = ModelParameters().apply {
-                setNGpuLayers(params.gpuLayers)
-                setUseMemorymap(params.useMmap)
-                setUseMemoryLock(params.useMlock)
-            }
+            val modelParams = ModelParameters()
+                .setNGpuLayers(params.gpuLayers)
+                .setModelFilePath(modelPath)
 
             // Load model
-            val loadedModel = LlamaModel(modelPath, modelParams)
+            val loadedModel = LlamaModel(modelParams)
             model = loadedModel
 
             // Extract model metadata
@@ -84,17 +82,16 @@ class DesktopInferenceEngine : InferenceEngine {
             println("[Desktop] Generating response for: ${prompt.take(50)}...")
 
             // Configure inference parameters
-            val inferenceParams = InferenceParameters(prompt).apply {
-                setNPredict(params.maxTokens)
-                setTemperature(params.temperature)
-                setTopP(params.topP)
-                setTopK(params.topK)
-                setRepeatPenalty(params.repeatPenalty)
+            val inferenceParams = InferenceParameters(prompt)
+                .setNPredict(params.maxTokens)
+                .setTemperature(params.temperature)
+                .setTopP(params.topP)
+                .setTopK(params.topK)
+                .setRepeatPenalty(params.repeatPenalty)
 
-                // Add stop sequences
-                params.stopSequences.forEach { stopSeq ->
-                    addStopString(stopSeq)
-                }
+            // Add stop sequences
+            params.stopSequences.forEach { stopSeq ->
+                inferenceParams.setStopStrings(stopSeq)
             }
 
             // Stream generation
