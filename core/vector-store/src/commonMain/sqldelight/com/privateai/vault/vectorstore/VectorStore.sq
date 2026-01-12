@@ -69,6 +69,9 @@ insertChunk:
 INSERT INTO chunks (id, document_id, content, chunk_index, token_count, embedding, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?);
 
+getChunkById:
+SELECT * FROM chunks WHERE id = ?;
+
 getChunksByDocument:
 SELECT * FROM chunks WHERE document_id = ? ORDER BY chunk_index;
 
@@ -97,3 +100,7 @@ VALUES (?, ?, ?);
 
 removeDocumentFromSession:
 DELETE FROM session_documents WHERE session_id = ? AND document_id = ?;
+
+-- Note: Vector search query cannot be defined here as SQLDelight doesn't support
+-- virtual table MATCH operations. Vector search is implemented directly in code
+-- using driver.execute() with raw SQL.

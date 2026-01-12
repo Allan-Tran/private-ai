@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(./gradlew:*)"
+      "Bash(./gradlew:*)",
+      "Bash(gradlew.bat assemble:*)",
+      "Bash(./gradlew.bat assemble:*)",
+      "Bash(./gradlew.bat:*)"
     ]
   }
 }

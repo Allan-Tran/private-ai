@@ -12,8 +12,9 @@ import kotlinx.serialization.Serializable
 interface VectorStore {
     /**
      * Initialize the vector store with sqlite-vec extension.
+     * @param requireVectorExtension If true, throws exception if extension not found. If false, continues without vector search.
      */
-    suspend fun initialize()
+    suspend fun initialize(requireVectorExtension: Boolean = true)
 
     /**
      * Add a document and its chunks to the store.

@@ -22,10 +22,12 @@ import java.nio.ByteOrder
  *
  * @param driver SQLDriver with encryption enabled
  * @param redactor Privacy redactor to mask sensitive data before storage
+ * @param embeddingDimension Dimension of embeddings (3072 for Llama 3.2 3B, 2048 for TinyLlama)
  */
 class SqliteVectorStore(
     private val driver: SqlDriver,
-    private val redactor: PrivacyRedactor
+    private val redactor: PrivacyRedactor,
+    private val embeddingDimension: Int = 3072
 ) : VectorStore {
 
     private val database = VectorDatabase(driver)
@@ -34,26 +36,65 @@ class SqliteVectorStore(
     init {
         println("[VectorStore] 🔒 Initialized with encryption and privacy redaction")
         println("[VectorStore]    Redaction patterns: ${redactor.getRedactionPatterns().joinToString(", ")}")
+        println("[VectorStore]    Embedding dimension: $embeddingDimension")
     }
 
-override suspend fun initialize() {
+override suspend fun initialize(requireVectorExtension: Boolean) {
         withContext(Dispatchers.IO) {
             try {
-                driver.execute(null, "SELECT load_extension('vec0')", 0)
-                
+                // Try multiple possible extension paths
+                var extensionLoaded = false
+                val possibleExtensions = listOf(
+                    "vec0",                                    // Already in library path
+                    "./vec0",                                  // Current directory
+                    "./sqlite-vec/vec0",                       // Common subdirectory
+                    System.getProperty("user.dir") + "/vec0"   // User directory
+                )
+
+                for (extPath in possibleExtensions) {
+                    try {
+                        driver.execute(null, "SELECT load_extension('$extPath')", 0)
+                        extensionLoaded = true
+                        println("[VectorStore] ✅ Vector extension loaded from: $extPath")
+                        break
+                    } catch (e: Exception) {
+                        // Try next path
+                    }
+                }
+
+                if (!extensionLoaded) {
+                    println("[VectorStore] ⚠️  sqlite-vec extension not found")
+                    println("[VectorStore]    Tried paths: ${possibleExtensions.joinToString(", ")}")
+                    if (requireVectorExtension) {
+                        println("[VectorStore]    ERROR: Extension required but not found")
+                        println("[VectorStore]    Download from: https://github.com/asg017/sqlite-vec/releases")
+                        println("[VectorStore]    Place vec0.dll (Windows) / vec0.dylib (Mac) / vec0.so (Linux) in project root")
+                        throw IllegalStateException("sqlite-vec extension required for vector search")
+                    } else {
+                        println("[VectorStore]    Continuing without vector search capability (test mode)")
+                        return@withContext
+                    }
+                }
+
+                // Create virtual table with dynamic embedding dimension
                 driver.execute(
                     null,
                     """
                     CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
                         chunk_id TEXT PRIMARY KEY,
-                        embedding FLOAT[384]
+                        embedding FLOAT[$embeddingDimension]
                     )
                     """.trimIndent(),
                     0
                 )
-                println("[VectorStore] ✅ Vector extension loaded successfully")
+                println("[VectorStore] ✅ Vector table created with $embeddingDimension dimensions")
             } catch (e: Exception) {
-                println("[VectorStore] ⚠️  Warning: 'vec0' extension not found. Vector search will be disabled.")
+                if (requireVectorExtension) {
+                    println("[VectorStore] ❌ Vector extension initialization failed: ${e.message}")
+                    throw e
+                } else {
+                    println("[VectorStore] ⚠️  Skipping vector extension (test mode): ${e.message}")
+                }
             }
         }
     }
@@ -81,6 +122,14 @@ override suspend fun initialize() {
 
             // Insert chunks with embeddings (also redacted)
             chunks.forEach { chunk ->
+                // Validate embedding dimension matches configured dimension
+                if (chunk.embedding.size != embeddingDimension) {
+                    throw IllegalArgumentException(
+                        "Embedding dimension mismatch: expected $embeddingDimension, got ${chunk.embedding.size}. " +
+                        "Ensure your model's embedding dimension matches the SqliteVectorStore configuration."
+                    )
+                }
+
                 val redactedChunkContent = redactor.redact(chunk.content)
 
                 queries.insertChunk(
@@ -139,17 +188,47 @@ override suspend fun initialize() {
         threshold: Float
     ): List<SearchResult> {
         return withContext(Dispatchers.IO) {
-            // TODO: Implement actual vector similarity search with sqlite-vec extension
-            // For now, return empty list until extension is properly configured
-            // This requires:
-            // 1. Loading sqlite-vec extension (.dll/.so/.dylib)
-            // 2. Creating virtual table with vec0
-            // 3. Implementing proper vector search query
+            try {
+                // Validate query embedding dimension
+                if (queryEmbedding.size != embeddingDimension) {
+                    throw IllegalArgumentException(
+                        "Query embedding dimension mismatch: expected $embeddingDimension, got ${queryEmbedding.size}"
+                    )
+                }
 
-            println("[VectorStore] ⚠️  Vector search not yet implemented - requires sqlite-vec extension")
-            println("[VectorStore]    See: https://github.com/asg017/sqlite-vec")
+                val searchResults = mutableListOf<SearchResult>()
 
-            emptyList()
+                // NOTE: Vector search implementation using sqlite-vec
+                // The sqlite-vec extension provides MATCH operator for vector similarity
+                // However, SQLDelight doesn't support virtual table operations in .sq files
+                //
+                // This implementation is a stub that documents the intended behavior.
+                // For full functionality:
+                // 1. Ensure sqlite-vec extension is loaded (done in initialize())
+                // 2. Ensure vec_chunks virtual table is populated (done in addDocument())
+                // 3. Use JNI/FFI bindings or custom SQL execution to query vec_chunks
+                //
+                // Query structure (for reference):
+                // SELECT chunk_id, distance
+                // FROM vec_chunks
+                // WHERE embedding MATCH ?
+                // ORDER BY distance
+                // LIMIT ?
+                //
+                // Then join results with chunks and documents tables.
+
+                println("[VectorStore] ⚠️  Vector search currently stubbed")
+                println("[VectorStore]    To enable: implement custom SQL execution for vec_chunks MATCH query")
+                println("[VectorStore]    See: https://github.com/asg017/sqlite-vec for query examples")
+                println("[VectorStore]    Returning empty results until full integration")
+
+                return@withContext searchResults
+
+            } catch (e: Exception) {
+                println("[VectorStore] ❌ Vector search failed: ${e.message}")
+                e.printStackTrace()
+                return@withContext emptyList()
+            }
         }
     }
 

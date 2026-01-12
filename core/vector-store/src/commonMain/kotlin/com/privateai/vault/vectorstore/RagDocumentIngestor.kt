@@ -3,6 +3,7 @@ package com.privateai.vault.vectorstore
 import com.privateai.vault.inference.InferenceEngine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import java.io.File
 import java.util.UUID
 
 /**
@@ -173,38 +174,99 @@ class RagDocumentIngestor(
 
         for (filePath in files) {
             try {
+                val file = File(filePath)
+
+                // Check if file exists
+                if (!file.exists()) {
+                    emit(IngestionProgress.Error(
+                        filePath,
+                        "File not found: $filePath"
+                    ))
+                    failCount++
+                    continue
+                }
+
+                // Check if it's a file (not directory)
+                if (!file.isFile) {
+                    emit(IngestionProgress.Error(
+                        filePath,
+                        "Path is not a file: $filePath"
+                    ))
+                    failCount++
+                    continue
+                }
+
                 // Determine file type and ingest
-                val fileName = filePath.substringAfterLast("/").substringAfterLast("\\")
+                val fileName = file.name
                 val fileType = fileName.substringAfterLast(".", "txt")
 
                 val metadata = DocumentMetadata(
                     fileName = fileName,
                     fileType = fileType,
-                    fileSize = 0, // Would need actual file size
+                    fileSize = file.length(),
                     uploadedAt = System.currentTimeMillis(),
                     tags = listOf("folder:$folderName")
                 )
 
                 // Story 3.4: Treat folder as single logical source
                 when (fileType.lowercase()) {
-                    "pdf" -> {
-                        // Would read PDF file here
-                        emit(IngestionProgress.Error(
-                            fileName,
-                            "Folder-based PDF ingestion pending file system access"
-                        ))
-                    }
                     "txt", "md" -> {
-                        // Would read text file here
-                        emit(IngestionProgress.Error(
-                            fileName,
-                            "Folder-based text ingestion pending file system access"
-                        ))
+                        try {
+                            // Read text file content
+                            val content = file.readText(Charsets.UTF_8)
+
+                            // Use text ingestion for the file content
+                            ingestText(content, metadata, config).collect { progress ->
+                                emit(progress)
+
+                                // Track success/failure
+                                when (progress) {
+                                    is IngestionProgress.Complete -> successCount++
+                                    is IngestionProgress.Error -> failCount++
+                                    else -> { /* Continue */ }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            emit(IngestionProgress.Error(
+                                fileName,
+                                "Failed to read text file: ${e.message}"
+                            ))
+                            failCount++
+                        }
+                    }
+                    "pdf" -> {
+                        // PDF ingestion - delegate to ingestPdf if pdfExtractor is available
+                        if (pdfExtractor == null) {
+                            emit(IngestionProgress.Error(
+                                fileName,
+                                "PDF extraction not available - no PdfExtractor configured"
+                            ))
+                            failCount++
+                        } else {
+                            try {
+                                val pdfBytes = file.readBytes()
+                                ingestPdf(pdfBytes, metadata, config).collect { progress ->
+                                    emit(progress)
+
+                                    when (progress) {
+                                        is IngestionProgress.Complete -> successCount++
+                                        is IngestionProgress.Error -> failCount++
+                                        else -> { /* Continue */ }
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                emit(IngestionProgress.Error(
+                                    fileName,
+                                    "Failed to read PDF file: ${e.message}"
+                                ))
+                                failCount++
+                            }
+                        }
                     }
                     else -> {
                         emit(IngestionProgress.Error(
                             fileName,
-                            "Unsupported file type: $fileType"
+                            "Unsupported file type: $fileType (supported: txt, md, pdf)"
                         ))
                         failCount++
                     }
