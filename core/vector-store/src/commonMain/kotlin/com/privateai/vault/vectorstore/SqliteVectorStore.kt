@@ -33,6 +33,9 @@ class SqliteVectorStore(
     private val database = VectorDatabase(driver)
     private val queries = database.vectorStoreQueries
 
+    // Track whether vector extension was successfully loaded
+    private var vectorExtensionLoaded = false
+
     init {
         println("[VectorStore] 🔒 Initialized with encryption and privacy redaction")
         println("[VectorStore]    Redaction patterns: ${redactor.getRedactionPatterns().joinToString(", ")}")
@@ -55,6 +58,7 @@ override suspend fun initialize(requireVectorExtension: Boolean) {
                     try {
                         driver.execute(null, "SELECT load_extension('$extPath')", 0)
                         extensionLoaded = true
+                        vectorExtensionLoaded = true
                         println("[VectorStore] ✅ Vector extension loaded from: $extPath")
                         break
                     } catch (e: Exception) {
@@ -65,6 +69,7 @@ override suspend fun initialize(requireVectorExtension: Boolean) {
                 if (!extensionLoaded) {
                     println("[VectorStore] ⚠️  sqlite-vec extension not found")
                     println("[VectorStore]    Tried paths: ${possibleExtensions.joinToString(", ")}")
+                    vectorExtensionLoaded = false
                     if (requireVectorExtension) {
                         println("[VectorStore]    ERROR: Extension required but not found")
                         println("[VectorStore]    Download from: https://github.com/asg017/sqlite-vec/releases")
@@ -196,32 +201,67 @@ override suspend fun initialize(requireVectorExtension: Boolean) {
                     )
                 }
 
-                val searchResults = mutableListOf<SearchResult>()
+                // Fetch all chunks and compute cosine similarity
+                // Note: For large datasets, sqlite-vec extension would be more efficient
+                // This fallback implementation works without the extension
+                val allChunks = queries.getAllChunks().executeAsList()
 
-                // NOTE: Vector search implementation using sqlite-vec
-                // The sqlite-vec extension provides MATCH operator for vector similarity
-                // However, SQLDelight doesn't support virtual table operations in .sq files
-                //
-                // This implementation is a stub that documents the intended behavior.
-                // For full functionality:
-                // 1. Ensure sqlite-vec extension is loaded (done in initialize())
-                // 2. Ensure vec_chunks virtual table is populated (done in addDocument())
-                // 3. Use JNI/FFI bindings or custom SQL execution to query vec_chunks
-                //
-                // Query structure (for reference):
-                // SELECT chunk_id, distance
-                // FROM vec_chunks
-                // WHERE embedding MATCH ?
-                // ORDER BY distance
-                // LIMIT ?
-                //
-                // Then join results with chunks and documents tables.
+                if (allChunks.isEmpty()) {
+                    println("[VectorStore] 🔍 No chunks in database to search")
+                    return@withContext emptyList()
+                }
 
-                println("[VectorStore] ⚠️  Vector search currently stubbed")
-                println("[VectorStore]    To enable: implement custom SQL execution for vec_chunks MATCH query")
-                println("[VectorStore]    See: https://github.com/asg017/sqlite-vec for query examples")
-                println("[VectorStore]    Returning empty results until full integration")
+                // Compute similarity for each chunk
+                val similarities = allChunks.mapNotNull { chunk ->
+                    val embedding = chunk.embedding?.let { blobToFloatArray(it) }
+                    if (embedding == null || embedding.size != embeddingDimension) {
+                        null
+                    } else {
+                        val similarity = cosineSimilarity(queryEmbedding, embedding)
+                        if (similarity >= threshold) {
+                            chunk to similarity
+                        } else {
+                            null
+                        }
+                    }
+                }
 
+                // Sort by similarity (descending) and take top results
+                val topResults = similarities
+                    .sortedByDescending { it.second }
+                    .take(limit)
+
+                // Build search results with full document info
+                val searchResults = topResults.mapNotNull { (chunk, similarity) ->
+                    val document = queries.getDocumentById(chunk.document_id).executeAsOneOrNull()
+                    if (document != null) {
+                        SearchResult(
+                            document = Document(
+                                id = document.id,
+                                content = document.content,
+                                sourcePath = document.source_path,
+                                metadata = document.metadata?.let { Json.decodeFromString(it) } ?: emptyMap(),
+                                chunkCount = document.chunk_count.toInt(),
+                                createdAt = document.created_at,
+                                updatedAt = document.updated_at
+                            ),
+                            chunk = DocumentChunk(
+                                id = chunk.id,
+                                documentId = chunk.document_id,
+                                content = chunk.content,
+                                chunkIndex = chunk.chunk_index.toInt(),
+                                tokenCount = chunk.token_count.toInt(),
+                                embedding = blobToFloatArray(chunk.embedding ?: ByteArray(0)),
+                                createdAt = chunk.created_at
+                            ),
+                            similarity = similarity
+                        )
+                    } else {
+                        null
+                    }
+                }
+
+                println("[VectorStore] 🔍 Found ${searchResults.size} similar chunks (threshold: $threshold)")
                 return@withContext searchResults
 
             } catch (e: Exception) {
@@ -230,6 +270,27 @@ override suspend fun initialize(requireVectorExtension: Boolean) {
                 return@withContext emptyList()
             }
         }
+    }
+
+    /**
+     * Compute cosine similarity between two vectors.
+     * Returns a value between -1 and 1, where 1 is identical.
+     */
+    private fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
+        if (a.size != b.size) return 0f
+
+        var dotProduct = 0f
+        var normA = 0f
+        var normB = 0f
+
+        for (i in a.indices) {
+            dotProduct += a[i] * b[i]
+            normA += a[i] * a[i]
+            normB += b[i] * b[i]
+        }
+
+        val denominator = kotlin.math.sqrt(normA) * kotlin.math.sqrt(normB)
+        return if (denominator > 0) dotProduct / denominator else 0f
     }
 
     override suspend fun createSession(session: Session) {
@@ -314,17 +375,31 @@ override suspend fun initialize(requireVectorExtension: Boolean) {
     // Helper functions for vector operations
 
     private fun insertIntoVectorIndex(chunkId: String, embedding: FloatArray) {
-        val sql = "INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?)"
-        driver.execute(null, sql, 2) {
-            bindString(0, chunkId)
-            bindBytes(1, floatArrayToBlob(embedding))
+        // Skip if vector extension not loaded
+        if (!vectorExtensionLoaded) return
+
+        try {
+            val sql = "INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?)"
+            driver.execute(null, sql, 2) {
+                bindString(0, chunkId)
+                bindBytes(1, floatArrayToBlob(embedding))
+            }
+        } catch (e: Exception) {
+            println("[VectorStore] ⚠️  Failed to insert into vector index: ${e.message}")
         }
     }
 
     private fun removeFromVectorIndex(chunkId: String) {
-        val sql = "DELETE FROM vec_chunks WHERE chunk_id = ?"
-        driver.execute(null, sql, 1) {
-            bindString(0, chunkId)
+        // Skip if vector extension not loaded
+        if (!vectorExtensionLoaded) return
+
+        try {
+            val sql = "DELETE FROM vec_chunks WHERE chunk_id = ?"
+            driver.execute(null, sql, 1) {
+                bindString(0, chunkId)
+            }
+        } catch (e: Exception) {
+            println("[VectorStore] ⚠️  Failed to remove from vector index: ${e.message}")
         }
     }
 

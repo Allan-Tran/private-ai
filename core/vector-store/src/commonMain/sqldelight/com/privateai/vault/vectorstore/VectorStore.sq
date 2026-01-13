@@ -75,6 +75,9 @@ SELECT * FROM chunks WHERE id = ?;
 getChunksByDocument:
 SELECT * FROM chunks WHERE document_id = ? ORDER BY chunk_index;
 
+getAllChunks:
+SELECT * FROM chunks;
+
 deleteChunksByDocument:
 DELETE FROM chunks WHERE document_id = ?;
 

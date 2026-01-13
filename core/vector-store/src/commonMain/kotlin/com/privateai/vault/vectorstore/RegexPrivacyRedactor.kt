@@ -37,15 +37,17 @@ companion object {
 
         // Credit card number patterns (Visa, MasterCard, Amex, Discover)
         private val CREDIT_CARD_PATTERNS = listOf(
-            // 16 digit cards (Visa/Mastercard) - matches 4 groups of 4
-            Regex("""\b(?:4[0-9]{3}|5[1-5][0-9]{2}|6011|35\d{3})[\s-]?[0-9]{4}[\s-]?[0-9]{4}[\s-]?[0-9]{4}\b"""),
-            
-            // 15 digit Amex
-            Regex("""\b3[47][0-9]{13}\b"""),
-            
-            // Generic fallback for other formats
+            // 16 digit cards with spaces or dashes: 4111 1111 1111 1111 or 4111-1111-1111-1111
             Regex("""\b[0-9]{4}[\s-][0-9]{4}[\s-][0-9]{4}[\s-][0-9]{4}\b"""),
-            Regex("""\b[0-9]{4}[\s-][0-9]{6}[\s-][0-9]{5}\b""")
+
+            // 15 digit Amex with space: 3782 822463 10005
+            Regex("""\b[0-9]{4}[\s-][0-9]{6}[\s-][0-9]{5}\b"""),
+
+            // 16 digit cards continuous (Visa/Mastercard): 4111111111111111
+            Regex("""\b(?:4[0-9]{3}|5[1-5][0-9]{2}|6011|35\d{2})[0-9]{12}\b"""),
+
+            // 15 digit Amex continuous: 378282246310005
+            Regex("""\b3[47][0-9]{13}\b""")
         )
 
         // IP address patterns (IPv4 and IPv6)
@@ -78,6 +80,20 @@ companion object {
     override fun redact(text: String): String {
         var redacted = text
 
+        // IMPORTANT: Order matters! Longer patterns should be checked first
+        // to avoid partial matches by shorter patterns.
+
+        // Redact credit card numbers FIRST (before phone numbers)
+        // Credit cards can look like phone numbers if not matched first
+        CREDIT_CARD_PATTERNS.forEach { pattern ->
+            redacted = pattern.replace(redacted, CREDIT_CARD_MASK)
+        }
+
+        // Redact SSNs (before phone numbers - 9 digits could look like phone)
+        SSN_PATTERNS.forEach { pattern ->
+            redacted = pattern.replace(redacted, SSN_MASK)
+        }
+
         // Redact phone numbers
         PHONE_PATTERNS.forEach { pattern ->
             redacted = pattern.replace(redacted, PHONE_MASK)
@@ -85,16 +101,6 @@ companion object {
 
         // Redact email addresses
         redacted = EMAIL_PATTERN.replace(redacted, EMAIL_MASK)
-
-        // Redact SSNs
-        SSN_PATTERNS.forEach { pattern ->
-            redacted = pattern.replace(redacted, SSN_MASK)
-        }
-
-        // Redact credit card numbers
-        CREDIT_CARD_PATTERNS.forEach { pattern ->
-            redacted = pattern.replace(redacted, CREDIT_CARD_MASK)
-        }
 
         // Redact IP addresses
         IP_PATTERNS.forEach { pattern ->
