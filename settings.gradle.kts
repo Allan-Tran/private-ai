@@ -27,9 +27,9 @@ include(":shared")
 
 // Feature slices (Vertical Slice Architecture)
 include(":features:session-analyst")
+include(":features:active-desk")
 //include(":features:document-vault")
 //include(":features:model-manager")
-//include(":features:active-desk")
 
 // Core infrastructure
 include(":core:inference-engine")
