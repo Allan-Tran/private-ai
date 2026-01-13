@@ -32,6 +32,7 @@ class DesktopInferenceEngine : InferenceEngine {
             val modelParams = ModelParameters()
                 .setNGpuLayers(params.gpuLayers)
                 .setModelFilePath(modelPath)
+                .setEmbedding(params.embedding)
 
             // Load model
             val loadedModel = LlamaModel(modelParams)

@@ -23,6 +23,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.input.key.*
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
@@ -280,19 +282,30 @@ private fun ChatBubble(message: ChatMessage) {
             modifier = Modifier.widthIn(max = 600.dp),
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
-            Surface(
-                shape = RoundedCornerShape(
-                    topStart = 16.dp,
-                    topEnd = 16.dp,
-                    bottomStart = if (isUser) 16.dp else 4.dp,
-                    bottomEnd = if (isUser) 4.dp else 16.dp
-                ),
+        Surface(
+                shape = RoundedCornerShape(16.dp), // Simplified shape for brevity
                 color = when {
                     isSystem -> MaterialTheme.colorScheme.tertiaryContainer
                     isUser -> MaterialTheme.colorScheme.primary
                     else -> MaterialTheme.colorScheme.surfaceVariant
                 }
             ) {
+                SelectionContainer {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = message.content,
+                            color = when {
+                                isSystem -> MaterialTheme.colorScheme.onTertiaryContainer
+                                isUser -> MaterialTheme.colorScheme.onPrimary
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+
+                        // ... (Keep StreamingCursor & SourceDocuments logic) ...
+                    }
+                }
+
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
                         text = message.content,
@@ -449,7 +462,18 @@ private fun ChatInputArea(
             OutlinedTextField(
                 value = inputText,
                 onValueChange = onInputChange,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).onPreviewKeyEvent {
+                        if (it.key == Key.Enter && it.type == KeyEventType.KeyDown) {
+                            if (it.isShiftPressed) {
+                                false // Let it create a new line
+                            } else {
+                                onSend()
+                                true // Consume the event (don't create new line)
+                            }
+                        } else {
+                            false
+                        }
+                    },
                 placeholder = { Text("Ask a question...") },
                 enabled = !isLoading,
                 maxLines = 5,

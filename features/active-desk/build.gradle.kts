@@ -44,3 +44,15 @@ kotlin {
         }
     }
 }
+
+compose.desktop {
+    application {
+        mainClass = "com.privateai.vault.MainKt"
+        
+        nativeDistributions {
+            targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi)
+            packageName = "PrivateAI"
+            packageVersion = "1.0.0"
+        }
+    }
+}

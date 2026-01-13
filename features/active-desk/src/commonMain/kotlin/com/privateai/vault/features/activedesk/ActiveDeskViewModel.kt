@@ -261,17 +261,23 @@ class ActiveDeskViewModel(
         _state.update { it.copy(activeContextChunks = activeChunks) }
     }
 
-    private fun buildPromptWithContext(query: String, context: RetrievedContext): String {
-        return if (context.chunks.isNotEmpty()) {
+private fun buildPromptWithContext(query: String, context: RetrievedContext): String {
+        // Llama 3 / 3.2 Format
+        // <|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nSystem Prompt<|eot_id|>...
+        
+        val systemPrompt = if (context.chunks.isNotEmpty()) {
             contextualRetriever.formatContextForPrompt(context)
         } else {
-            // No context available, just use the query directly
-            """You are a helpful AI assistant. Please answer the following question:
-
-$query
-
-If you don't have enough information to answer, please say so."""
+            "You are a helpful and private AI assistant running locally on the user's Active Desk. Answer clearly and concisely."
         }
+
+        return """
+<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+$systemPrompt<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+$query<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+""".trimIndent()
     }
 
     private suspend fun generateStreamingResponse(
@@ -289,7 +295,11 @@ If you don't have enough information to answer, please say so."""
                     maxTokens = 1024,
                     temperature = 0.7f,
                     topP = 0.9f,
-                    stopSequences = listOf("\n\nUser:", "\n\nHuman:")
+                    stopSequences = listOf(
+                        "<|eot_id|>", 
+                        "<|start_header_id|>", 
+                        "user"
+                    )
                 )
             ).collect { token ->
                 responseBuilder.append(token)

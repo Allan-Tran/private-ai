@@ -55,7 +55,8 @@ data class ModelParams(
     val threads: Int = 4,
     val gpuLayers: Int = 0, // 0 = CPU only
     val useMmap: Boolean = true,
-    val useMlock: Boolean = false
+    val useMlock: Boolean = false,
+    val embedding: Boolean = false
 )
 
 /**
