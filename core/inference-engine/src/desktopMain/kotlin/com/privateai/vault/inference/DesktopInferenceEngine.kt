@@ -34,10 +34,10 @@ class DesktopInferenceEngine : InferenceEngine {
             model?.close()
 
             // Configure model parameters with LoRA support
-            // API reference: https://github.com/kherud/java-llama.cpp
+            // API reference: https://github.com/kherud/java-llama.cpp (v4.x API)
             val modelParams = ModelParameters()
-                .setModelFilePath(modelPath)
-                .setNGpuLayers(params.gpuLayers)
+                .setModel(modelPath)
+                .setGpuLayers(params.gpuLayers)
 
             // Add LoRA adapter if specified
             // Note: LoRA adapters are .gguf files that modify base model behavior

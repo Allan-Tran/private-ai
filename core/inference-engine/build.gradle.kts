@@ -46,7 +46,7 @@ kotlin {
             dependencies {
                 // java-llama.cpp with LoRA adapter support
                 // See: https://github.com/kherud/java-llama.cpp
-                implementation("de.kherud:llama:3.0.0")
+                implementation("de.kherud:llama:4.2.0")
             }
         }
 
