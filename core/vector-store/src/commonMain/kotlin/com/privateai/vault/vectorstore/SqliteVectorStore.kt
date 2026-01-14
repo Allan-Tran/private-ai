@@ -20,14 +20,19 @@ import java.nio.ByteOrder
  * - Redacts sensitive PII before storage (Story 2.2)
  * - Defense-in-depth: encryption + redaction
  *
+ * DIMENSION HANDLING:
+ * - If embeddingDimension is provided, validates all embeddings match
+ * - If null, auto-detects from first embedding and creates vector table dynamically
+ * - This allows seamless switching between models (TinyLlama 2048, Llama 3 3072, etc.)
+ *
  * @param driver SQLDriver with encryption enabled
  * @param redactor Privacy redactor to mask sensitive data before storage
- * @param embeddingDimension Dimension of embeddings (3072 for Llama 3.2 3B, 2048 for TinyLlama)
+ * @param embeddingDimension Dimension of embeddings, or null for auto-detection
  */
 class SqliteVectorStore(
     private val driver: SqlDriver,
     private val redactor: PrivacyRedactor,
-    private val embeddingDimension: Int = 3072
+    private var embeddingDimension: Int? = null
 ) : VectorStore {
 
     private val database = VectorDatabase(driver)
@@ -36,11 +41,23 @@ class SqliteVectorStore(
     // Track whether vector extension was successfully loaded
     private var vectorExtensionLoaded = false
 
+    // Track whether dimensions have been locked (after first insert)
+    private var dimensionsLocked = false
+
     init {
         println("[VectorStore] 🔒 Initialized with encryption and privacy redaction")
         println("[VectorStore]    Redaction patterns: ${redactor.getRedactionPatterns().joinToString(", ")}")
-        println("[VectorStore]    Embedding dimension: $embeddingDimension")
+        if (embeddingDimension != null) {
+            println("[VectorStore]    Embedding dimension: $embeddingDimension (fixed)")
+        } else {
+            println("[VectorStore]    Embedding dimension: auto-detect on first insert")
+        }
     }
+
+    /**
+     * Get the current embedding dimension (may be null if not yet detected).
+     */
+    fun getEmbeddingDimension(): Int? = embeddingDimension
 
 override suspend fun initialize(requireVectorExtension: Boolean) {
         withContext(Dispatchers.IO) {
@@ -81,18 +98,21 @@ override suspend fun initialize(requireVectorExtension: Boolean) {
                     }
                 }
 
-                // Create virtual table with dynamic embedding dimension
-                driver.execute(
-                    null,
-                    """
-                    CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
-                        chunk_id TEXT PRIMARY KEY,
-                        embedding FLOAT[$embeddingDimension]
-                    )
-                    """.trimIndent(),
-                    0
-                )
-                println("[VectorStore] ✅ Vector table created with $embeddingDimension dimensions")
+                // If dimension is already known, create vector table now
+                // Otherwise, defer until first insert (auto-detection)
+                if (embeddingDimension != null) {
+                    createVectorTable(embeddingDimension!!)
+                } else {
+                    // Try to detect dimension from existing chunks
+                    val existingDimension = detectExistingDimension()
+                    if (existingDimension != null) {
+                        embeddingDimension = existingDimension
+                        dimensionsLocked = true
+                        createVectorTable(existingDimension)
+                    } else {
+                        println("[VectorStore] 📏 Vector table creation deferred until first embedding insert")
+                    }
+                }
             } catch (e: Exception) {
                 if (requireVectorExtension) {
                     println("[VectorStore] ❌ Vector extension initialization failed: ${e.message}")
@@ -104,6 +124,49 @@ override suspend fun initialize(requireVectorExtension: Boolean) {
         }
     }
 
+    /**
+     * Create the vector virtual table with the specified dimension.
+     */
+    private fun createVectorTable(dimension: Int) {
+        if (!vectorExtensionLoaded) return
+
+        try {
+            driver.execute(
+                null,
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
+                    chunk_id TEXT PRIMARY KEY,
+                    embedding FLOAT[$dimension]
+                )
+                """.trimIndent(),
+                0
+            )
+            println("[VectorStore] ✅ Vector table created with $dimension dimensions")
+            dimensionsLocked = true
+        } catch (e: Exception) {
+            println("[VectorStore] ⚠️  Vector table creation failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Detect embedding dimension from existing chunks in the database.
+     */
+    private fun detectExistingDimension(): Int? {
+        return try {
+            val chunks = queries.getAllChunks().executeAsList()
+            if (chunks.isEmpty()) return null
+
+            val firstChunkWithEmbedding = chunks.firstOrNull { it.embedding != null }
+            firstChunkWithEmbedding?.embedding?.let { blob ->
+                val dimension = blob.size / 4 // 4 bytes per float
+                println("[VectorStore] 📏 Detected existing embedding dimension: $dimension")
+                dimension
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     override suspend fun addDocument(document: Document, chunks: List<DocumentChunk>) {
         withContext(Dispatchers.IO) {
             // Epic 2.2: Redact sensitive information before storage
@@ -112,6 +175,18 @@ override suspend fun initialize(requireVectorExtension: Boolean) {
             // Log if redaction occurred (for security audit)
             if (redactedContent != document.content) {
                 println("[VectorStore] ⚠️  Sensitive data detected and redacted in document ${document.id}")
+            }
+
+            // Auto-detect embedding dimension from first chunk if not set
+            if (chunks.isNotEmpty() && embeddingDimension == null) {
+                val detectedDimension = chunks.first().embedding.size
+                embeddingDimension = detectedDimension
+                println("[VectorStore] 📏 Auto-detected embedding dimension: $detectedDimension")
+
+                // Create vector table with detected dimension
+                if (vectorExtensionLoaded) {
+                    createVectorTable(detectedDimension)
+                }
             }
 
             // Insert document with redacted content
@@ -127,11 +202,13 @@ override suspend fun initialize(requireVectorExtension: Boolean) {
 
             // Insert chunks with embeddings (also redacted)
             chunks.forEach { chunk ->
-                // Validate embedding dimension matches configured dimension
-                if (chunk.embedding.size != embeddingDimension) {
+                // Validate embedding dimension matches configured/detected dimension
+                val expectedDim = embeddingDimension
+                if (expectedDim != null && chunk.embedding.size != expectedDim) {
                     throw IllegalArgumentException(
-                        "Embedding dimension mismatch: expected $embeddingDimension, got ${chunk.embedding.size}. " +
-                        "Ensure your model's embedding dimension matches the SqliteVectorStore configuration."
+                        "Embedding dimension mismatch: expected $expectedDim, got ${chunk.embedding.size}. " +
+                        "All embeddings in a VectorStore must have the same dimension. " +
+                        "If switching models, create a new database or clear existing embeddings."
                     )
                 }
 
@@ -194,10 +271,12 @@ override suspend fun initialize(requireVectorExtension: Boolean) {
     ): List<SearchResult> {
         return withContext(Dispatchers.IO) {
             try {
-                // Validate query embedding dimension
-                if (queryEmbedding.size != embeddingDimension) {
+                // Validate query embedding dimension if we have a known dimension
+                val expectedDim = embeddingDimension
+                if (expectedDim != null && queryEmbedding.size != expectedDim) {
                     throw IllegalArgumentException(
-                        "Query embedding dimension mismatch: expected $embeddingDimension, got ${queryEmbedding.size}"
+                        "Query embedding dimension mismatch: expected $expectedDim, got ${queryEmbedding.size}. " +
+                        "Ensure you're using the same model for embedding queries as was used for document ingestion."
                     )
                 }
 

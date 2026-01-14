@@ -66,12 +66,14 @@ actual fun createVectorStoreDriver(path: String, passphrase: String): SqlDriver 
  * @param databasePath Path to encrypted database file
  * @param passphrase Encryption passphrase for SQLCipher
  * @param redactor Privacy redactor (defaults to RegexPrivacyRedactor)
+ * @param embeddingDimension Dimension of embedding vectors (null for auto-detection)
  */
 actual fun createVectorStore(
     databasePath: String,
     passphrase: String,
-    redactor: PrivacyRedactor
+    redactor: PrivacyRedactor,
+    embeddingDimension: Int?
 ): VectorStore {
     val driver = createVectorStoreDriver(databasePath, passphrase)
-    return SqliteVectorStore(driver, redactor)
+    return SqliteVectorStore(driver, redactor, embeddingDimension)
 }

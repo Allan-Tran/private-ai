@@ -44,6 +44,8 @@ kotlin {
         val desktopMain by getting {
             dependsOn(commonMain)
             dependencies {
+                // java-llama.cpp with LoRA adapter support
+                // See: https://github.com/kherud/java-llama.cpp
                 implementation("de.kherud:llama:3.0.0")
             }
         }

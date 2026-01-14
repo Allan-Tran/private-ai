@@ -142,9 +142,28 @@ data class SearchResult(
  * @param databasePath Path to the encrypted database file
  * @param passphrase Encryption passphrase for SQLCipher
  * @param redactor Privacy redactor for masking sensitive data (defaults to RegexPrivacyRedactor)
+ * @param embeddingDimension Dimension of embedding vectors. Use null for auto-detection from first insert.
  */
 expect fun createVectorStore(
     databasePath: String,
     passphrase: String,
-    redactor: PrivacyRedactor = RegexPrivacyRedactor()
+    redactor: PrivacyRedactor = RegexPrivacyRedactor(),
+    embeddingDimension: Int? = null
 ): VectorStore
+
+/**
+ * Common embedding dimensions for popular models.
+ * Use these constants when creating VectorStore to ensure consistency.
+ */
+object EmbeddingDimensions {
+    const val LLAMA_3_2_3B = 3072      // Llama 3.2 3B
+    const val LLAMA_3_1_8B = 4096      // Llama 3.1 8B
+    const val LLAMA_2_7B = 4096        // Llama 2 7B
+    const val TINYLLAMA = 2048          // TinyLlama 1.1B
+    const val PHI_2 = 2560              // Microsoft Phi-2
+    const val MISTRAL_7B = 4096         // Mistral 7B
+    const val QWEN_1_8B = 2048          // Qwen 1.8B
+    const val NOMIC_EMBED = 768         // Nomic Embed Text
+    const val BGE_SMALL = 384           // BGE-Small
+    const val BGE_LARGE = 1024          // BGE-Large
+}
